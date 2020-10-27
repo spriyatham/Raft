@@ -1,9 +1,13 @@
 package edu.sjsu.cs249.raft;
 
+import java.io.*;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -12,15 +16,28 @@ import edu.sjsu.cs249.raft.service.gen.RaftServerGrpc.RaftServerFutureStub;
 import io.grpc.Channel;
 
 public class State {
-	
+	/**
+	 * Intializing state invovles.
+	 * 1. Loading all persistent data
+	 * 2. Intiatlizing the volatile state variable to their respective init values.
+	 * 		-> Common state
+	 * 	 	-> LeaderState - has to be initialized only when the the server becomes a leader.
+	 *
+	 * **/
 	//Persistent Storage.
-	int currentTerm;
-	int candidateID; // a number to Identify the current server
+	AtomicLong currentTerm = new AtomicLong(-1);
+	Integer nodeID = -1; // a number to Identify the current server
 	//holds candidateID of the server that received vote in this term.
 	//should be initialized to -1.
-	int votedFor; 	
+	AtomicInteger votedFor = new AtomicInteger(-1);
+
+	//FUTURE: See if any blocking collection implementation can be used here.
 	List<LogEntry> log;
-	
+
+	//paths to files where this info will be stored.
+	String CURRENT_TERM_FILE;
+	String VOTED_FOR_FILE;
+	String LOG_FILE;
 	//Volatile State on all Servers
 	
 	int commitIndex;
@@ -50,15 +67,31 @@ public class State {
 	
 	AtomicBoolean shutdown;
 	Map<Integer, String> connectionInfo;
-	Map<Integer, Channel> candidateChannelMap;
-	Map<Integer, RaftServerFutureStub> candidateStubMap;
+	Map<Integer, Channel> nodeChannelMap;
+	Map<Integer, RaftServerFutureStub> nodeStubMap;
 	
 	//TimeInfo
 	long upperBound;
 	long lowerBound;
-	
-	
-	
+
+	public State(Properties config) throws IOException {
+		/**
+		 * lowerBound=150
+		 * upperBound=300
+		 * currentTermFile=currentTermFile
+		 * votedForFile=votedForFile
+		 * logFile=logFile
+		 * */
+		this.CURRENT_TERM_FILE = config.getProperty("currentTermFile");
+		this.VOTED_FOR_FILE = config.getProperty("votedForFile");
+		this.LOG_FILE = config.getProperty("logFile");
+		this.upperBound = Long.parseLong(config.getProperty("lowerBound"));
+		this.lowerBound = Long.parseLong(config.getProperty("upperBound"));
+		initCommon();
+		initPersistentState();
+		initVolatileState();
+	}
+
 	void initCommon()
 	{
 		mode = new AtomicInteger(-1); // initial value..belongs to none of the modes
@@ -83,5 +116,187 @@ public class State {
 	public void setLowerBound(long lowerBound) {
 		this.lowerBound = lowerBound;
 	}
-	
+
+	/**
+	 * TODO: Complete this when you are writing leader code..
+	 * */
+	public void initLeaderState() {
+
+	}
+
+	public void initVolatileState() {
+		this.commitIndex = 0;
+		this.lastApplied = 0;
+	}
+
+	public void initPersistentState() throws IOException {
+		loadCurrentTerm();
+		loadVotedFor();
+		loadCurrentTerm();
+	}
+
+	public List<LogEntry> getLog(){
+		return log;
+	}
+
+	/**
+	 * FUTURE: All the set operations which invovle writing the value to a file,
+	 * should do it more robustly. The current file should be copied first, then write should be performed,
+	 * and then delete the copy once the write is successfull. This will prevent data corrruption.
+	 * Right now, I am simply writing to the file because, my focus is on implementing RAFT.
+	 * */
+
+	public void appendLogEntry(LogEntry logEntry) throws Exception {
+		synchronized (log){
+			log.add(logEntry);
+			persistLog();
+		}
+	}
+
+	public long getCurrentTerm(){
+		return currentTerm.get();
+	}
+	public void setCurrentTerm(long term) throws IOException {
+		synchronized (currentTerm) {
+			try {
+				writeIntToFile(CURRENT_TERM_FILE, term);
+				currentTerm.set(term);
+			} catch (IOException e) {
+				System.out.println("Exception occurred while writing current term to file");
+				e.printStackTrace();
+				//TODO: Handle this if required..
+				//Throwing from synchronized block will not have any side effect, lock will be released
+				throw e;
+			}
+		}
+	}
+
+	public void setVotedFor(int nodeID) throws IOException {
+		synchronized (votedFor) {
+			try {
+				writeIntToFile(VOTED_FOR_FILE, nodeID);
+				votedFor.set(nodeID);
+			} catch (IOException e) {
+				System.out.println("Exception occurred while writing the current vote to file");
+				e.printStackTrace();
+				//TODO: Handle this if required..
+				//Throwing from synchronized block will not have any side effect, lock will be released
+				throw e;
+			}
+		}
+	}
+
+	/*
+	 * This method loads the log from a file.
+	 * */
+	public void loadLog() throws Exception {
+		ObjectInputStream in = null;
+		File logFile = new File(LOG_FILE);
+		try {
+			if (!logFile.exists()) {
+				//create a file an return
+				logFile.createNewFile();
+				log = new ArrayList<>();
+				return;
+			}
+			in = new ObjectInputStream(new FileInputStream(logFile));
+			log = (List<LogEntry>) in.readObject();
+			System.out.println("loadLog: logSize = " + log.size());
+		}
+		catch(Exception e)
+		{
+			System.out.println("loadLog: some exception, re-throwing error");
+			e.printStackTrace();
+			throw e;
+		}
+	}
+
+	/**
+	 * Loads the currentTerm  from file.
+	 * During first boot, the file will not be present, so it will create the file and
+	 * initializes the currentTerm to 0 as specified in the protocol.
+	 * */
+	private void loadCurrentTerm() throws IOException {
+		int currentTermInFile = readIntFromFile(CURRENT_TERM_FILE);
+		if(currentTermInFile == -1) {
+			//THis is the first boot, initialize the term to 0 and write to the file.
+			this.currentTerm.set(0);
+			writeIntToFile(CURRENT_TERM_FILE, this.currentTerm.get());
+		}
+		else {
+			this.currentTerm.set(currentTermInFile);
+		}
+	}
+
+	/**
+	 * During the first boot, the file will not exist..and we'll leave it like that,
+	 * dont create new file, it will anyways be set when a vote is being casted..
+	 * */
+	private void loadVotedFor() throws IOException {
+		int voteInFile = readIntFromFile(VOTED_FOR_FILE);
+		if(voteInFile != -1) {
+			this.votedFor.set(voteInFile);
+		}
+	}
+
+	private int readIntFromFile(String name) throws IOException {
+		File file = new File(name);
+		if(!file.exists()) {
+			return -1;
+		}
+		BufferedReader br = new BufferedReader(new FileReader(file));
+		String line = "";
+		try {
+			line = br.readLine();
+			return Integer.parseInt(line);
+		} catch (NumberFormatException e) {
+			throw new IOException("Found " + line + " in " + file);
+		} finally {
+			br.close();
+		}
+	}
+
+	private void writeIntToFile(String name, final long value) throws IOException {
+		File file = new File(name);
+		if(!file.exists()) {
+			file.createNewFile();
+		}
+		FileWriter fw = new FileWriter(name);
+		fw.write(value+"");
+	}
+
+	/**
+	 * Currently I just serilaize the List<LongEntry> and wrtie it to a file. This is very brute.
+	 * FUTURE: Use a more effecient way to incrementally persist logEntires. Look at what mapDB does.
+	 * */
+	private void persistLog() throws Exception{
+		ObjectOutputStream out = null;
+		try {
+			File file = new File(LOG_FILE); //this file always exists at this place because we create it in loadLog() if it is absent
+			out = new ObjectOutputStream(new FileOutputStream(file));
+		} catch (FileNotFoundException e) {
+			System.out.println("persistLog: "+ LOG_FILE+ " absent, re-throwing error.");
+			e.printStackTrace();
+			throw e;
+		} catch (IOException e) {
+			System.out.println("persistLog: some IO exception, re-throwing error");
+			e.printStackTrace();
+			throw e;
+		}
+		out.writeObject(log);
+		out.close();
+		System.out.println("persistLog: log saved successfully.");
+	}
+
+	public int getMode() {
+		return mode.get();
+	}
+
+	public void setMode(int mode) {
+		this.mode.set(mode);
+	}
+
+	public boolean isShutdown() {
+		return shutdown.get();
+	}
 }

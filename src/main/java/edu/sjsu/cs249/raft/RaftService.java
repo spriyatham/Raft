@@ -14,7 +14,7 @@ import io.grpc.stub.StreamObserver;
 /**
  * RaftService will work along with the <b>Server</b> to service client requests and requests 
  * from the leader.
- * The @Server an @RaftService will communicate through @State
+ * The @Server and @RaftService will communicate through @State
  * */
 public class RaftService extends RaftServerImplBase {
 

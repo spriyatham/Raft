@@ -1,12 +1,15 @@
 package edu.sjsu.cs249.raft;
 
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
 import edu.sjsu.cs249.raft.service.gen.RaftServerGrpc;
 import edu.sjsu.cs249.raft.service.gen.RaftServerGrpc.RaftServerFutureStub;
-import edu.sjsu.cs249.raft.service.gen.RaftServerGrpc.RaftServerStub;
 import io.grpc.Channel;
 import io.grpc.ManagedChannelBuilder;
 
@@ -21,31 +24,82 @@ public class Server {
 	 * 5. Start the grpcServe..
 	 * 
 	 * */
-	void parseClusterConfiguration(String configFile, State state)
-	{
-		
+	private State state;
+	private Properties config;
+	public static void main(String[] args) throws IOException {
+		//You start here
+		//1. Load all your persistent data
+		//2. Instantiate the state object
+		//3.
+		Server raftServer = new Server();
+		String propsFile = args[0];
+		Properties config = raftServer.loadConfig(propsFile);
+		raftServer.state = new State(config);
+
+		//buildChannel and Stubs
+		raftServer.getConnectionInformation(config);
+	}
+
+	public void initServer(String propsFile) throws IOException {
+		Properties config = loadConfig(propsFile);
+		setConfig(config);
+
+		//1. init state
+		setState(new State(config));
+		//2.Build Channel and stubs.
+		Map<Integer,String[]> connectionInfo = getConnectionInformation(config);
+		buildChannelsAndStubs(connectionInfo, getState());
+		//3.Make the Make the instance a follower.
+		state.setMode(State.FOLLOWER);
+		//4. Create objects of Follower, Candidate and Leader - All these will be threads most probably..and they will be started only when server is
+		// in that respective mode.
+		//5. Start GRPC server
+		//5. Start the main loop
+	}
+
+	/**
+	 * This loop coordinates the transition of the server from one mode to another mode
+	 * */
+	private void mainLoop(){
+		while (!state.isShutdown()) {
+			switch (state.getMode()) {
+				case State.FOLLOWER: //do stuff
+					break;
+				case State.CANDIDATE: //do stuff
+					break;
+				case State.LEADER: //do stuff
+					break;
+			}
+		}
+	}
+
+	Properties loadConfig(String configFile) throws IOException {
+		InputStream input = new FileInputStream(configFile);
+		Properties prop = new Properties();
+		prop.load(input);
+		return prop;
 	}
 	
-	void buildChannelsAndStubs(Map<Integer, String[]> connectionInfo, State state)
+	private void buildChannelsAndStubs(Map<Integer, String[]> connectionInfo, State state)
 	{
 		//ManagedChannelBuilder.forAddress("name", 4050).build();
 		//1. build channel for each candidate and add it to the connection map
 		//2. From the channel build non - blocking stubs and add it to the candidate stub map.
-		state.candidateChannelMap = new HashMap<>(connectionInfo.size());
-		state.candidateStubMap = new HashMap<>(connectionInfo.size());
+		state.nodeChannelMap = new HashMap<>(connectionInfo.size());
+		state.nodeStubMap = new HashMap<>(connectionInfo.size());
 		
 		for(Map.Entry<Integer, String[]> candidate : connectionInfo.entrySet())
 		{
 			String[] connParams = candidate.getValue();
 			Channel channel = ManagedChannelBuilder.forAddress(connParams[0], Integer.parseInt(connParams[1])).build();
 			RaftServerFutureStub fstub = RaftServerGrpc.newFutureStub(channel);
-			state.candidateChannelMap.put(candidate.getKey(), channel);
-			state.candidateStubMap.put(candidate.getKey(), fstub);
+			state.nodeChannelMap.put(candidate.getKey(), channel);
+			state.nodeStubMap.put(candidate.getKey(), fstub);
 		}
 	
 	}
 	
-	Map<Integer,String[]> getConnectionInformation(Properties config)
+	private Map<Integer,String[]> getConnectionInformation(Properties config)
 	{
 		int cadidateID = Integer.parseInt(config.getProperty("candidateID"));
 		int numOfServers = Integer.parseInt(config.getProperty("numOfServers"));
@@ -59,10 +113,20 @@ public class Server {
 		}
 		return connectionInfo;
 	}
-	
-	void extractTimeoutRange(Properties config, State state)
-	{
-		state.setLowerBound(Long.parseLong(config.getProperty("lowerBound")));
-		state.setUpperBound(Long.parseLong(config.getProperty("upperBound")));
+
+	public State getState() {
+		return state;
+	}
+
+	public void setState(State state) {
+		this.state = state;
+	}
+
+	public Properties getConfig() {
+		return config;
+	}
+
+	public void setConfig(Properties config) {
+		this.config = config;
 	}
 }

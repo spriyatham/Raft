@@ -1,11 +1,13 @@
 package edu.sjsu.cs249.raft;
 
-public class LogEntry {
+import java.io.Serializable;
+
+public class LogEntry implements Serializable {
 	int index;
-	int term;
+	long term;
 	String command;
 	
-	public LogEntry(int index, int term, String command) {
+	public LogEntry(int index, long term, String command) {
 		super();
 		this.index = index;
 		this.term = term;
@@ -17,10 +19,10 @@ public class LogEntry {
 	public void setIndex(int index) {
 		this.index = index;
 	}
-	public int getTerm() {
+	public long getTerm() {
 		return term;
 	}
-	public void setTerm(int term) {
+	public void setTerm(long term) {
 		this.term = term;
 	}
 	public String getCommand() {
