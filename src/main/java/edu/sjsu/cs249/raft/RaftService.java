@@ -18,6 +18,9 @@ import io.grpc.stub.StreamObserver;
  * */
 public class RaftService extends RaftServerImplBase {
 
+	AppendEntriesProcessor aep;
+	State state;
+
 	@Override
 	public void requestVote(RequestVoteRequest request, StreamObserver<RequestVoteResponse> responseObserver) {
 		// TODO Auto-generated method stub
@@ -25,9 +28,44 @@ public class RaftService extends RaftServerImplBase {
 	}
 
 	@Override
-	public void appendEntries(AppendEntriesRequest request, StreamObserver<AppendEntriesResponse> responseObserver) {
-		// TODO Auto-generated method stub
-		super.appendEntries(request, responseObserver);
+	public void appendEntries(AppendEntriesRequest request, StreamObserver<AppendEntriesResponse> responseObserver){
+		long currentTerm = state.getCurrentTerm();
+		if(request.getTerm() < currentTerm) {
+			System.out.println("appendEntries: term in request : " + request.getTerm() + " < currentTerm :" + currentTerm);
+			responseObserver.onNext(AppendEntriesResponse.newBuilder().setTerm(currentTerm).setSuccess(false).build());
+			responseObserver.onCompleted();
+			return;
+		}
+
+		//if not Entry is null return success...basically ignore.
+		if(request.getEntry() == null) {
+			responseObserver.onNext(AppendEntriesResponse.newBuilder().setTerm(currentTerm).setSuccess(true).build());
+			responseObserver.onCompleted();
+			return;
+		}
+
+		/**
+		 * TODO: Add checks to
+		 * 1. Service this request only if you are a follower.
+		 * 2. If you are a candidate..and got an RPC from the leader..you have to do the transition to follower..add that logic here..
+		 * */
+
+		AppendEntriesWrapper aew = new AppendEntriesWrapper(request);
+		aep.queueRequest(aew);
+		synchronized (aew) {
+			try {
+				aew.wait();
+			} catch (InterruptedException e) {
+				//Handle it elegantly if required.
+				e.printStackTrace();
+			}
+		}
+		if(aew.getSomeException() != null) {
+			responseObserver.onError(aew.getSomeException());
+		} else {
+			responseObserver.onNext(aew.getResponse());
+		}
+		responseObserver.onCompleted();
 	}
 
 	@Override

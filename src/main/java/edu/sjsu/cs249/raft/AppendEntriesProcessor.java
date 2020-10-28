@@ -18,37 +18,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * */
 public class AppendEntriesProcessor implements  Runnable{
-
-    public class AppendEntriesWrapper {
-        //TODO: If required use a separate object for waiting on
-        AppendEntriesRequest request;
-        AppendEntriesResponse response;
-
-        public AppendEntriesWrapper(AppendEntriesRequest request) {
-            this.request = request;
-        }
-
-        public AppendEntriesRequest getRequest() {
-            return request;
-        }
-
-        public void setRequest(AppendEntriesRequest request) {
-            this.request = request;
-        }
-
-        public AppendEntriesResponse getResponse() {
-            return response;
-        }
-
-        public void setResponse(AppendEntriesResponse response) {
-            this.response = response;
-        }
-    }
-
     State state;
     //queuedRequests, should only be emptied once this node becomes a leader/candidate. A node can transtion from follower--> follower so this queue has to be
     //maintained..
-    LinkedBlockingQueue<AppendEntriesWrapper> queuedRequests = new LinkedBlockingQueue<>();
+    private LinkedBlockingQueue<AppendEntriesWrapper> queuedRequests = new LinkedBlockingQueue<>();
     //will be shutdown once a follower stops being a follower
     public AtomicBoolean isRunning = new AtomicBoolean(true);
 
@@ -91,6 +64,13 @@ public class AppendEntriesProcessor implements  Runnable{
 
                         //3. Send success.
                         responseStatus = true;
+                        int commitIndex = state.getCommitIndex();
+                        int leaderCommit = Long.valueOf(request.getLeaderCommit()).intValue();
+
+                        if(leaderCommit > commitIndex) {
+                            //this is the new entry which we added..
+                            state.setCommitIndex(Math.min(leaderCommit, (int)entry.getIndex()));
+                        }
                     }
 
                     AppendEntriesResponse aer = AppendEntriesResponse.newBuilder().setTerm(state.getCurrentTerm()).setSuccess(responseStatus).build();

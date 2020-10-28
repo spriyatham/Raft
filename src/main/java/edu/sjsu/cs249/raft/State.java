@@ -135,6 +135,22 @@ public class State {
 		loadCurrentTerm();
 	}
 
+	public int getCommitIndex() {
+		return commitIndex;
+	}
+
+	public void setCommitIndex(int commitIndex) {
+		this.commitIndex = commitIndex;
+	}
+
+	public int getLastApplied() {
+		return lastApplied;
+	}
+
+	public void setLastApplied(int lastApplied) {
+		this.lastApplied = lastApplied;
+	}
+
 	public List<LogEntry> getLog(){
 		return log;
 	}
