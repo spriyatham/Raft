@@ -29,7 +29,7 @@ public class State {
 	Integer nodeID = -1; // a number to Identify the current server
 	//holds candidateID of the server that received vote in this term.
 	//should be initialized to -1.
-	AtomicInteger votedFor = new AtomicInteger(-1);
+	VotedFor votedFor = null;
 
 	//FUTURE: See if any blocking collection implementation can be used here.
 	List<LogEntry> log;
@@ -74,7 +74,7 @@ public class State {
 	long upperBound;
 	long lowerBound;
 
-	public State(Properties config) throws IOException {
+	public State(Properties config) throws Exception {
 		/**
 		 * lowerBound=150
 		 * upperBound=300
@@ -129,10 +129,10 @@ public class State {
 		this.lastApplied = 0;
 	}
 
-	public void initPersistentState() throws IOException {
+	public void initPersistentState() throws Exception {
 		loadCurrentTerm();
 		loadVotedFor();
-		loadCurrentTerm();
+		loadLog();
 	}
 
 	public int getCommitIndex() {
@@ -165,7 +165,7 @@ public class State {
 	public void appendLogEntry(LogEntry logEntry) throws Exception {
 		synchronized (log){
 			log.add(logEntry);
-			persistLog();
+			persistObject(LOG_FILE, log);
 		}
 	}
 
@@ -187,18 +187,58 @@ public class State {
 		}
 	}
 
-	public void setVotedFor(int nodeID) throws IOException {
+	public VotedFor getVotedFor() {
+		return votedFor;
+	}
+
+	public void setVotedFor(long term, int nodeID) throws IOException {
+		if(votedFor == null) {
+			votedFor = new VotedFor();
+		}
 		synchronized (votedFor) {
 			try {
-				writeIntToFile(VOTED_FOR_FILE, nodeID);
-				votedFor.set(nodeID);
+				votedFor.setTerm(term);
+				votedFor.setCandidateID(nodeID);
+				persistObject(VOTED_FOR_FILE, votedFor);
 			} catch (IOException e) {
 				System.out.println("Exception occurred while writing the current vote to file");
 				e.printStackTrace();
 				//TODO: Handle this if required..
 				//Throwing from synchronized block will not have any side effect, lock will be released
 				throw e;
+			} catch (Exception e) {
+				e.printStackTrace();
 			}
+		}
+	}
+
+	/**
+	 * During the first boot, the file will not exist..and we'll leave it like that,
+	 * dont create new file, it will anyways be set when a vote is being casted..
+	 * */
+	private void loadVotedFor() throws Exception {
+		ObjectInputStream in = null;
+		File votedForFile = new File(VOTED_FOR_FILE);
+		try {
+			if (!votedForFile.exists()) {
+				votedFor = null;
+				return;
+			}
+			in = new ObjectInputStream(new FileInputStream(votedForFile));
+			votedFor = (VotedFor) in.readObject();
+			if(votedFor.getTerm() != currentTerm.get()) {
+				//The current term of the node and the votedfor does not match..it means that you have not voted for...any candidate in this term.
+				//This could happen because, you have changed your current term, but failed before updating your vote.
+				votedFor = null;
+				votedForFile.delete();
+			}
+			System.out.println(votedFor.toString());
+		}
+		catch(Exception e)
+		{
+			System.out.println("loadVotedFor: some exception, re-throwing error");
+			e.printStackTrace();
+			throw e;
 		}
 	}
 
@@ -244,17 +284,6 @@ public class State {
 		}
 	}
 
-	/**
-	 * During the first boot, the file will not exist..and we'll leave it like that,
-	 * dont create new file, it will anyways be set when a vote is being casted..
-	 * */
-	private void loadVotedFor() throws IOException {
-		int voteInFile = readIntFromFile(VOTED_FOR_FILE);
-		if(voteInFile != -1) {
-			this.votedFor.set(voteInFile);
-		}
-	}
-
 	private int readIntFromFile(String name) throws IOException {
 		File file = new File(name);
 		if(!file.exists()) {
@@ -285,23 +314,24 @@ public class State {
 	 * Currently I just serilaize the List<LongEntry> and wrtie it to a file. This is very brute.
 	 * FUTURE: Use a more effecient way to incrementally persist logEntires. Look at what mapDB does.
 	 * */
-	private void persistLog() throws Exception{
+	private void persistObject(String fileName, Object obj) throws Exception{
 		ObjectOutputStream out = null;
 		try {
-			File file = new File(LOG_FILE); //this file always exists at this place because we create it in loadLog() if it is absent
+			File file = new File(fileName); //this file always exists at this place because we create it in loadLog() if it is absent
+			if(!file.exists()) file.createNewFile();
 			out = new ObjectOutputStream(new FileOutputStream(file));
 		} catch (FileNotFoundException e) {
-			System.out.println("persistLog: "+ LOG_FILE+ " absent, re-throwing error.");
+			System.out.println("persistObject: "+ fileName+ " absent, re-throwing error.");
 			e.printStackTrace();
 			throw e;
 		} catch (IOException e) {
-			System.out.println("persistLog: some IO exception, re-throwing error");
+			System.out.println("persistObject: some IO exception, re-throwing error");
 			e.printStackTrace();
 			throw e;
 		}
-		out.writeObject(log);
+		out.writeObject(obj);
 		out.close();
-		System.out.println("persistLog: log saved successfully.");
+		System.out.println("persistObject:  saved successfully.");
 	}
 
 	public int getMode() {

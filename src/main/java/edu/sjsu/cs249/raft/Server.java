@@ -26,7 +26,7 @@ public class Server {
 	 * */
 	private State state;
 	private Properties config;
-	public static void main(String[] args) throws IOException {
+	public static void main(String[] args) throws Exception {
 		//You start here
 		//1. Load all your persistent data
 		//2. Instantiate the state object
@@ -40,7 +40,7 @@ public class Server {
 		raftServer.getConnectionInformation(config);
 	}
 
-	public void initServer(String propsFile) throws IOException {
+	public void initServer(String propsFile) throws Exception {
 		Properties config = loadConfig(propsFile);
 		setConfig(config);
 
