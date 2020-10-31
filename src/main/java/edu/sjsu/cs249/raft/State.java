@@ -23,6 +23,7 @@ public class State {
 	 * 		-> Common state
 	 * 	 	-> LeaderState - has to be initialized only when the the server becomes a leader.
 	 *
+	 * TODO: Seperate control variables and logic..like shutdown etc ..to a sepearte controller class.
 	 * **/
 	//Persistent Storage.
 	AtomicLong currentTerm = new AtomicLong(-1);
@@ -70,9 +71,9 @@ public class State {
 	Map<Integer, Channel> nodeChannelMap;
 	Map<Integer, RaftServerFutureStub> nodeStubMap;
 	
-	//TimeInfo
-	long upperBound;
-	long lowerBound;
+	//TimeOutInfo in milli seconds.
+	int upperBound;
+	int lowerBound;
 
 	public State(Properties config) throws Exception {
 		/**
@@ -85,8 +86,8 @@ public class State {
 		this.CURRENT_TERM_FILE = config.getProperty("currentTermFile");
 		this.VOTED_FOR_FILE = config.getProperty("votedForFile");
 		this.LOG_FILE = config.getProperty("logFile");
-		this.upperBound = Long.parseLong(config.getProperty("lowerBound"));
-		this.lowerBound = Long.parseLong(config.getProperty("upperBound"));
+		this.upperBound = Integer.parseInt(config.getProperty("lowerBound"));
+		this.lowerBound = Integer.parseInt(config.getProperty("upperBound"));
 		initCommon();
 		initPersistentState();
 		initVolatileState();
@@ -104,16 +105,16 @@ public class State {
 	
 	
 	
-	public long getUpperBound() {
+	public int getUpperBound() {
 		return upperBound;
 	}
-	public void setUpperBound(long upperBound) {
+	public void setUpperBound(int upperBound) {
 		this.upperBound = upperBound;
 	}
-	public long getLowerBound() {
+	public int getLowerBound() {
 		return lowerBound;
 	}
-	public void setLowerBound(long lowerBound) {
+	public void setLowerBound(int lowerBound) {
 		this.lowerBound = lowerBound;
 	}
 
@@ -160,6 +161,7 @@ public class State {
 	 * should do it more robustly. The current file should be copied first, then write should be performed,
 	 * and then delete the copy once the write is successfull. This will prevent data corrruption.
 	 * Right now, I am simply writing to the file because, my focus is on implementing RAFT.
+	 * Refer my implementation of ABD to check how you safely persist..a value.
 	 * */
 
 	public void appendLogEntry(LogEntry logEntry) throws Exception {
@@ -172,6 +174,21 @@ public class State {
 	public long getCurrentTerm(){
 		return currentTerm.get();
 	}
+
+	public void incrementCurrentTerm() throws IOException {
+		synchronized (currentTerm) {
+			try {
+				writeIntToFile(CURRENT_TERM_FILE, currentTerm.incrementAndGet());
+			} catch (IOException e) {
+				System.out.println("Exception occurred while writing current term to file");
+				e.printStackTrace();
+				//TODO: Handle this if required..
+				//Throwing from synchronized block will not have any side effect, lock will be released
+				throw e;
+			}
+		}
+	}
+
 	public void setCurrentTerm(long term) throws IOException {
 		synchronized (currentTerm) {
 			try {
@@ -342,7 +359,23 @@ public class State {
 		this.mode.set(mode);
 	}
 
+	public boolean isFollower() {
+		return mode.get() == FOLLOWER;
+	}
+
+	public boolean isCandidate() {
+		return mode.get() == CANDIDATE;
+	}
+
+	public boolean isLeader() {
+		return mode.get() == LEADER;
+	}
+
 	public boolean isShutdown() {
 		return shutdown.get();
+	}
+
+	public void shutdown(){
+		shutdown.set(true);
 	}
 }

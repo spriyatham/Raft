@@ -26,6 +26,10 @@ public class Server {
 	 * */
 	private State state;
 	private Properties config;
+	private AppendEntriesProcessor appendEntriesProcessor;
+	EventWaitThread eventWaitThread;
+	private Boolean heartBeatReceived = Boolean.FALSE;
+
 	public static void main(String[] args) throws Exception {
 		//You start here
 		//1. Load all your persistent data
@@ -45,11 +49,13 @@ public class Server {
 		setConfig(config);
 
 		//1. init state
-		setState(new State(config));
+		state = new State(config);
 		//2.Build Channel and stubs.
 		Map<Integer,String[]> connectionInfo = getConnectionInformation(config);
 		buildChannelsAndStubs(connectionInfo, getState());
 		//3.Make the Make the instance a follower.
+		appendEntriesProcessor = new AppendEntriesProcessor(state);
+		eventWaitThread = new EventWaitThread(heartBeatReceived, state);
 		state.setMode(State.FOLLOWER);
 		//4. Create objects of Follower, Candidate and Leader - All these will be threads most probably..and they will be started only when server is
 		// in that respective mode.
@@ -60,10 +66,17 @@ public class Server {
 	/**
 	 * This loop coordinates the transition of the server from one mode to another mode
 	 * */
-	private void mainLoop(){
+	private void mainLoop() throws InterruptedException {
 		while (!state.isShutdown()) {
 			switch (state.getMode()) {
 				case State.FOLLOWER: //do stuff
+					//These threads exit when the server is no longer a follower.
+					Thread aepThread = new Thread(appendEntriesProcessor);
+					Thread ewt = new Thread(eventWaitThread);
+					aepThread.start();
+					ewt.start();
+					ewt.join();
+					aepThread.join();
 					break;
 				case State.CANDIDATE: //do stuff
 					break;
@@ -128,5 +141,9 @@ public class Server {
 
 	public void setConfig(Properties config) {
 		this.config = config;
+	}
+
+	public AppendEntriesProcessor getAppendEntriesProcessor() {
+		return appendEntriesProcessor;
 	}
 }

@@ -6,7 +6,7 @@ package edu.sjsu.cs249.raft;
  * It will be notified once sever changes its mode to follower mode
  * 
  * */
-public class Follower implements Runnable {
+public class Follower {
 
 	State state;
 	Server server;
@@ -14,20 +14,8 @@ public class Follower implements Runnable {
 		this.state = state;
 		this.server = server;
 	}
-	@Override
-	public void run() {
-		/**
-		 * Invoke 2 threads.
-		 * 1. Event wait thread - that does a time wait to receive an AppendEntries call..
-		 * 2. ExecuteCommitted Commands - This thread executes the committed entries dumbly, as long as the server 
-		 * stays a follower.
-		 * */
-		while(!state.shutdown.get())
-		{
-			//while(state.mode.get() != State.FOLLOWER)
-				
-		}
-		
-	}
 
+	public void follow(){
+
+	}
 }

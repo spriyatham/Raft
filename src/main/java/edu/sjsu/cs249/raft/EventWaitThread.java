@@ -1,5 +1,9 @@
 package edu.sjsu.cs249.raft;
 
+import edu.sjsu.cs249.raft.util.RandomTimeoutGenerator;
+
+import java.io.IOException;
+
 /**
  * This thread do a timed wait for recieving a message.
  * if a message is received within the timeout period, it should reset the timeout period and restart the wait.
@@ -10,14 +14,47 @@ package edu.sjsu.cs249.raft;
  * 
  */
 public class EventWaitThread implements Runnable {
-	Boolean heartBeatObj = null; //this makes more sense..
+	Boolean heartBeatRecieved = null; //this makes more sense..
+	State state;
+	RandomTimeoutGenerator timeoutGenerator;
+
+	public EventWaitThread(Boolean heartBeatRecieved, State state) {
+		this.heartBeatRecieved = heartBeatRecieved;
+		this.state = state;
+		timeoutGenerator = new RandomTimeoutGenerator(state.getUpperBound(), state.getLowerBound());
+	}
+
 	@Override
 	public void run() {
 		// TODO Auto-generated method stub
-		boolean isFollower = true; //this thread should run as long as the server is the follower. This should Ideally be a global mode variale.
+		boolean transitionToCandidate = false;
 		
 		//here basically wait(timeout period of time on the heartbeat object..)..should come out of wait..either when heartbeat is reacieved or
 		//time out expire
+		while (!state.isShutdown() && state.isFollower()) {
+			long heartBeatTimeout = timeoutGenerator.generateRandomTimeOut();
+			synchronized (heartBeatRecieved) {
+				try {
+					heartBeatRecieved.wait(heartBeatTimeout);
+					if(heartBeatRecieved.equals(Boolean.FALSE)) {
+						//did not recieve heartbeat(AppendEntriesRPC) from the leader within the timeout.
+						transitionToCandidate = true;
+					}
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+			}
+			if(transitionToCandidate) {
+				try {
+					state.incrementCurrentTerm();
+				} catch (IOException e) {
+					System.out.println("Some exception while writing term to file..shutting downn...");
+					state.shutdown();
+					e.printStackTrace();
+				}
+				state.setMode(State.CANDIDATE);
+			}
+		}
 		
 	}
 }

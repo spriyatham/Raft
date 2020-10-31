@@ -22,17 +22,19 @@ public class AppendEntriesProcessor implements  Runnable{
     //queuedRequests, should only be emptied once this node becomes a leader/candidate. A node can transtion from follower--> follower so this queue has to be
     //maintained..
     private LinkedBlockingQueue<AppendEntriesWrapper> queuedRequests = new LinkedBlockingQueue<>();
-    //will be shutdown once a follower stops being a follower
-    public AtomicBoolean isRunning = new AtomicBoolean(true);
 
     public void queueRequest(AppendEntriesWrapper request){
         queuedRequests.add(request);
     }
 
+    public AppendEntriesProcessor(State state) {
+        this.state = state;
+    }
+
     @Override
     public void run() {
 
-        while(isRunning.get()) {
+        while(!state.isShutdown() && state.isFollower()) {
             try {
                 AppendEntriesWrapper aew = queuedRequests.take();
                 AppendEntriesRequest request = aew.getRequest();
@@ -85,10 +87,5 @@ public class AppendEntriesProcessor implements  Runnable{
                 e.printStackTrace();
             }
         }
-    }
-
-    //This will be called when the follower has to transition to someothe state..
-    public void shutdown(){
-        isRunning.set(false);
     }
 }

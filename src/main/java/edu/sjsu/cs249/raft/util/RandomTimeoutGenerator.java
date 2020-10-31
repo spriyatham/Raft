@@ -1,18 +1,23 @@
 package edu.sjsu.cs249.raft.util;
 
+import java.util.Random;
+
 public class RandomTimeoutGenerator {
-	long upperBound;
-	long lowerBound;
-	
-	public RandomTimeoutGenerator(long upperBound, long lowerBound) {
+	int upperBound;
+	int lowerBound;
+	Random random;
+	public RandomTimeoutGenerator(int upperBound, int lowerBound) {
 		super();
 		this.upperBound = upperBound;
 		this.lowerBound = lowerBound;
+		random = new Random();
 	}
-	
+
 	public long generateRandomTimeOut()
 	{
-		return 0;
+		return random.ints(lowerBound, upperBound)
+				.findFirst()
+				.getAsInt();
 	}
-	
+
 }

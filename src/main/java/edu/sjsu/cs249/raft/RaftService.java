@@ -53,7 +53,8 @@ public class RaftService extends RaftServerImplBase {
 				state.setVotedFor(candidateTerm, candidateId);
 				responseObserver.onNext(responseBuilder.setTerm(candidateTerm).setVoteGranted(true).build());
 				responseObserver.onCompleted();
-				//TODO: restart the election time out ...as you have just granted an vote.
+				//TODO: restart the election time out ...as you have just granted an vote -- just notify the heartbeat object, incase it
+				//TODO" is waiting..
 				return;
 			} catch (IOException e) {
 				responseObserver.onError(e);
