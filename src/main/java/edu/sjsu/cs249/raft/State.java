@@ -12,6 +12,7 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+import edu.sjsu.cs249.raft.service.gen.RaftServerGrpc;
 import edu.sjsu.cs249.raft.service.gen.RaftServerGrpc.RaftServerFutureStub;
 import io.grpc.Channel;
 
@@ -28,6 +29,7 @@ public class State {
 	//Persistent Storage.
 	AtomicLong currentTerm = new AtomicLong(-1);
 	Integer nodeID = -1; // a number to Identify the current server
+
 	//holds candidateID of the server that received vote in this term.
 	//should be initialized to -1.
 	VotedFor votedFor = null;
@@ -69,8 +71,8 @@ public class State {
 	AtomicBoolean shutdown;
 	Map<Integer, String> connectionInfo;
 	Map<Integer, Channel> nodeChannelMap;
-	Map<Integer, RaftServerFutureStub> nodeStubMap;
-	
+	Map<Integer, RaftServerGrpc.RaftServerStub> nodeStubMap;
+
 	//TimeOutInfo in milli seconds.
 	int upperBound;
 	int lowerBound;
@@ -257,6 +259,9 @@ public class State {
 			e.printStackTrace();
 			throw e;
 		}
+		finally {
+			in.close();
+		}
 	}
 
 	/*
@@ -377,5 +382,33 @@ public class State {
 
 	public void shutdown(){
 		shutdown.set(true);
+	}
+
+	public RaftServerGrpc.RaftServerStub getStub(int candidateId) {
+		return nodeStubMap.get(candidateId);
+	}
+
+	public Integer getNodeID() {
+		return nodeID;
+	}
+
+	public void setNodeID(Integer nodeID) {
+		this.nodeID = nodeID;
+	}
+
+	public Map<Integer, Channel> getNodeChannelMap() {
+		return nodeChannelMap;
+	}
+
+	public void setNodeChannelMap(Map<Integer, Channel> nodeChannelMap) {
+		this.nodeChannelMap = nodeChannelMap;
+	}
+
+	public Map<Integer, RaftServerGrpc.RaftServerStub> getNodeStubMap() {
+		return nodeStubMap;
+	}
+
+	public void setNodeStubMap(Map<Integer, RaftServerGrpc.RaftServerStub> nodeStubMap) {
+		this.nodeStubMap = nodeStubMap;
 	}
 }

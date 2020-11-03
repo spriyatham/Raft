@@ -23,6 +23,7 @@ public class RaftService extends RaftServerImplBase {
 
 	AppendEntriesProcessor aep;
 	State state;
+	EventWaitThread eventWaitThread;
 
 	@Override
 	public void requestVote(RequestVoteRequest request, StreamObserver<RequestVoteResponse> responseObserver) {
@@ -95,6 +96,13 @@ public class RaftService extends RaftServerImplBase {
 			return;
 		}
 
+		//TODO: Add the transition logic from LEADER/CANDIDATE to follower upon recieving append entry request from a term greater than mine..
+		/**
+		 * if(request.getTerm == state.currentTerm()) {
+		 *
+		 * }
+		 * */
+
 		//if not Entry is null return success...basically ignore.
 		if(request.getEntry() == null) {
 			responseObserver.onNext(AppendEntriesResponse.newBuilder().setTerm(currentTerm).setSuccess(true).build());
@@ -106,7 +114,21 @@ public class RaftService extends RaftServerImplBase {
 		 * TODO: Add checks to
 		 * 1. Service this request only if you are a follower.
 		 * 2. If you are a candidate..and got an RPC from the leader..you have to do the transition to follower..add that logic here..
+		 * 3. If you are a follower, who voted for a candidate, when you recived appendEntries RPC from that candidate - you restart the electionTime out thread
+		 * You need not do the 3rd check explicitly because, this is already handled in the regular flow, as you are already a follower...you anyways
+		 * notify the election timeout thread when ever you recieve an RPC>
 		 * */
+		/**
+		 * Note: When you are in the middle of election/ waiting for a majority, you could receive an append entries
+		 * RPC from another peer whose term is either
+		 *   > your current term -
+		 *   		abandon the election - i.e notify this code that election is not longer required
+		 *   		set your CurrentTerm to the new Term. and update your votedFor to that term..and that node
+		 *   	    When this happens to a node in follower mode....just update the term and votedFor
+		 *   = your current term
+		 *   		This means that another..node has become the leader for this term, you need not update your vote..
+		 *   		but, just notify the election code that is electionCompleted..
+		 * **/
 
 		AppendEntriesWrapper aew = new AppendEntriesWrapper(request);
 		aep.queueRequest(aew);

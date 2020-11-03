@@ -105,9 +105,9 @@ public class Server {
 		{
 			String[] connParams = candidate.getValue();
 			Channel channel = ManagedChannelBuilder.forAddress(connParams[0], Integer.parseInt(connParams[1])).build();
-			RaftServerFutureStub fstub = RaftServerGrpc.newFutureStub(channel);
+			RaftServerGrpc.RaftServerStub stub = RaftServerGrpc.newStub(channel);
 			state.nodeChannelMap.put(candidate.getKey(), channel);
-			state.nodeStubMap.put(candidate.getKey(), fstub);
+			state.nodeStubMap.put(candidate.getKey(), stub);
 		}
 	
 	}
