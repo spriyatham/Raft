@@ -96,7 +96,7 @@ public class Candidate{
 			//The first step in the leader process is to send append entries RPC.
 			return;
 		}
-		if(newHigherTerm > currentTerm) {
+		if(newHigherTerm > state.getCurrentTerm()) {
 			//Looks like ther is a new Term Adopt that term and transition to the follower mode..
 			state.setCurrentTerm(newHigherTerm);
 			state.setMode(State.FOLLOWER);
@@ -138,5 +138,21 @@ public class Candidate{
 				.setLastLogIndex(lastLogIndex)
 				.setLastLogTerm(lastLogTerm).build();
 		return request;
+	}
+
+	public AtomicBoolean getAbandonElection() {
+		return abandonElection;
+	}
+
+	public void setAbandonElection(boolean abandonElection) {
+		this.abandonElection.set(abandonElection);
+	}
+
+	public AtomicBoolean getElectionCompleted() {
+		return electionCompleted;
+	}
+
+	public void setElectionCompleted(boolean electionCompleted) {
+		this.electionCompleted.set(electionCompleted);
 	}
 }

@@ -7,6 +7,8 @@ import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import edu.sjsu.cs249.raft.service.gen.RaftServerGrpc;
 import edu.sjsu.cs249.raft.service.gen.RaftServerGrpc.RaftServerFutureStub;
@@ -28,7 +30,8 @@ public class Server {
 	private Properties config;
 	private AppendEntriesProcessor appendEntriesProcessor;
 	EventWaitThread eventWaitThread;
-	private Boolean heartBeatReceived = Boolean.FALSE;
+	private Candidate candidate;
+	//private AtomicBoolean heartBeatReceived = new AtomicBoolean(False);
 
 	public static void main(String[] args) throws Exception {
 		//You start here
@@ -55,7 +58,7 @@ public class Server {
 		buildChannelsAndStubs(connectionInfo, getState());
 		//3.Make the Make the instance a follower.
 		appendEntriesProcessor = new AppendEntriesProcessor(state);
-		eventWaitThread = new EventWaitThread(heartBeatReceived, state);
+		eventWaitThread = new EventWaitThread(state);
 		state.setMode(State.FOLLOWER);
 		//4. Create objects of Follower, Candidate and Leader - All these will be threads most probably..and they will be started only when server is
 		// in that respective mode.
@@ -71,7 +74,9 @@ public class Server {
 			switch (state.getMode()) {
 				case State.FOLLOWER: //do stuff
 					//These threads exit when the server is no longer a follower.
+					//TODO: If required add an atomic counter to determine if the threads have been inititalized.
 					Thread aepThread = new Thread(appendEntriesProcessor);
+					//eventWaitThread.heartBeatRecieved.set(false);
 					Thread ewt = new Thread(eventWaitThread);
 					aepThread.start();
 					ewt.start();
@@ -106,8 +111,10 @@ public class Server {
 			String[] connParams = candidate.getValue();
 			Channel channel = ManagedChannelBuilder.forAddress(connParams[0], Integer.parseInt(connParams[1])).build();
 			RaftServerGrpc.RaftServerStub stub = RaftServerGrpc.newStub(channel);
+			RaftServerGrpc.RaftServerBlockingStub blockingStub = RaftServerGrpc.newBlockingStub(channel);
 			state.nodeChannelMap.put(candidate.getKey(), channel);
 			state.nodeStubMap.put(candidate.getKey(), stub);
+			state.nodeBlockingStubMap.put(candidate.getKey(), blockingStub);
 		}
 	
 	}
@@ -145,5 +152,13 @@ public class Server {
 
 	public AppendEntriesProcessor getAppendEntriesProcessor() {
 		return appendEntriesProcessor;
+	}
+
+	public Candidate getCandidate() {
+		return candidate;
+	}
+
+	public void setCandidate(Candidate candidate) {
+		this.candidate = candidate;
 	}
 }

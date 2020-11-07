@@ -3,6 +3,7 @@ package edu.sjsu.cs249.raft;
 import edu.sjsu.cs249.raft.util.RandomTimeoutGenerator;
 
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * This thread do a timed wait for recieving a message.
@@ -14,12 +15,12 @@ import java.io.IOException;
  * 
  */
 public class EventWaitThread implements Runnable {
-	Boolean heartBeatRecieved = null; //this makes more sense..
+	AtomicBoolean heartBeatRecieved = null; //this makes more sense..
 	State state;
 	RandomTimeoutGenerator timeoutGenerator;
 
-	public EventWaitThread(Boolean heartBeatRecieved, State state) {
-		this.heartBeatRecieved = heartBeatRecieved;
+	public EventWaitThread(State state) {
+		this.heartBeatRecieved = new AtomicBoolean(false);
 		this.state = state;
 		timeoutGenerator = new RandomTimeoutGenerator(state.getUpperBound(), state.getLowerBound());
 	}
@@ -36,10 +37,12 @@ public class EventWaitThread implements Runnable {
 			synchronized (heartBeatRecieved) {
 				try {
 					heartBeatRecieved.wait(heartBeatTimeout);
-					if(heartBeatRecieved.equals(Boolean.FALSE)) {
+					if(!heartBeatRecieved.get()) {
 						//did not recieve heartbeat(AppendEntriesRPC) from the leader within the timeout.
 						transitionToCandidate = true;
 					}
+					//reset heartbeatRecieve to false.
+					heartBeatRecieved.set(false);
 				} catch (InterruptedException e) {
 					e.printStackTrace();
 				}

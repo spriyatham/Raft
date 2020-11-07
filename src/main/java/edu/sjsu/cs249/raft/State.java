@@ -72,10 +72,14 @@ public class State {
 	Map<Integer, String> connectionInfo;
 	Map<Integer, Channel> nodeChannelMap;
 	Map<Integer, RaftServerGrpc.RaftServerStub> nodeStubMap;
+	Map<Integer, RaftServerGrpc.RaftServerBlockingStub> nodeBlockingStubMap;
 
 	//TimeOutInfo in milli seconds.
 	int upperBound;
 	int lowerBound;
+
+	//LeaderID: -1 that we dont know who the leader is.
+	AtomicInteger leaderId = new AtomicInteger(-1);
 
 	public State(Properties config) throws Exception {
 		/**
@@ -157,6 +161,21 @@ public class State {
 	public List<LogEntry> getLog(){
 		return log;
 	}
+
+	public LogEntry getLastLogEntry() {
+		synchronized (log){
+			if(log.size() == 0) return  null;
+			return log.get(log.size() - 1);
+		}
+	}
+
+	public LogEntry getLogEntry(int index) {
+		synchronized (log){
+			if(log.size() == 0 || index < 0) return  null;
+			return log.get(log.size() - 1);
+		}
+	}
+
 
 	/**
 	 * FUTURE: All the set operations which invovle writing the value to a file,
@@ -410,5 +429,20 @@ public class State {
 
 	public void setNodeStubMap(Map<Integer, RaftServerGrpc.RaftServerStub> nodeStubMap) {
 		this.nodeStubMap = nodeStubMap;
+	}
+
+	public void setLeaderId(int id) {
+		leaderId.set(id);
+	}
+	public int getLeaderId(){
+		return  leaderId.get();
+	}
+
+	public Map<Integer, RaftServerGrpc.RaftServerBlockingStub> getNodeBlockingStubMap() {
+		return nodeBlockingStubMap;
+	}
+
+	public void setNodeBlockingStubMap(Map<Integer, RaftServerGrpc.RaftServerBlockingStub> nodeBlockingStubMap) {
+		this.nodeBlockingStubMap = nodeBlockingStubMap;
 	}
 }

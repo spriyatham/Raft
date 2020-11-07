@@ -53,7 +53,8 @@ public class AppendEntriesProcessor implements  Runnable{
                     int logSize = log.size();
                     int logLastIndex = logSize -1;
 
-                    if((prevLogIndex <= logLastIndex) && (log.get((int)prevLogIndex).getTerm() == prevLogTerm)) {
+                    if((request.getEntry().getIndex() == 0) ||
+                            ((prevLogIndex <= logLastIndex) && (log.get((int)prevLogIndex).getTerm() == prevLogTerm))) {
                         //purge everything else after this point in the log and append the new entry..
                         //1. purge everything from prevLogIndex +1 to logLastIndex
                         for(int i = logLastIndex; i > prevLogIndex ; i--) {

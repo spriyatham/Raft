@@ -24,6 +24,7 @@ public class RaftService extends RaftServerImplBase {
 	AppendEntriesProcessor aep;
 	State state;
 	EventWaitThread eventWaitThread;
+	Server server;
 
 	@Override
 	public void requestVote(RequestVoteRequest request, StreamObserver<RequestVoteResponse> responseObserver) {
@@ -50,8 +51,20 @@ public class RaftService extends RaftServerImplBase {
 			try {
 				if(candidateTerm > myCurrentTerm) {
 					state.setCurrentTerm(candidateTerm);
+					state.setVotedFor(candidateTerm, candidateId);
+					switch (state.getMode()) {
+						case State.FOLLOWER: //You are already a follower..now you have to begin a new wait for receiving an AppendEntries RPC,
+							notifyEventWaitThread();
+							break;
+						case State.CANDIDATE:
+							//I am obviously contesting for a previous term...now that there is a new term..I will abandon election
+							endElection();
+							break;
+						case State.LEADER:
+							state.setMode(State.FOLLOWER);
+							break;
+					}
 				}
-				state.setVotedFor(candidateTerm, candidateId);
 				responseObserver.onNext(responseBuilder.setTerm(candidateTerm).setVoteGranted(true).build());
 				responseObserver.onCompleted();
 				//TODO: restart the election time out ...as you have just granted an vote -- just notify the heartbeat object, incase it
@@ -96,39 +109,51 @@ public class RaftService extends RaftServerImplBase {
 			return;
 		}
 
-		//TODO: Add the transition logic from LEADER/CANDIDATE to follower upon recieving append entry request from a term greater than mine..
-		/**
-		 * if(request.getTerm == state.currentTerm()) {
-		 *
-		 * }
-		 * */
+		if(state.isFollower()) {
+			//notify the event wait thread that we recieve a message from the leader.
+			notifyEventWaitThread();
+		}
+		try {
+			if(request.getTerm() > currentTerm) {
+				//adopt the term.
+				state.setCurrentTerm(request.getTerm());
+				state.setLeaderId(request.getLeaderId());
 
-		//if not Entry is null return success...basically ignore.
+				switch (state.getMode()) {
+					case State.CANDIDATE:
+						//The election might be in progresss..so you inform the candidate that election is completed/abandoned because
+						// you recieved an AppendEntry request from a node with higher Term.
+						state.setMode(State.FOLLOWER);
+						Candidate candidate = server.getCandidate();
+						candidate.setAbandonElection(true);
+						candidate.setElectionCompleted(true);
+						break;
+					case State.LEADER:
+						state.setMode(State.FOLLOWER);
+						break;
+				}
+				//you can set heartbeat recieved to true..because, infact you
+				//have recieved an AE rpc from the leader.
+				notifyEventWaitThread();
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+
+		// you are a candidate and you received append entry from another node for the same term.
+		if(state.isCandidate() && request.getTerm() == state.getCurrentTerm()) {
+			//Transition to follower mode and end the election
+			state.setMode(State.FOLLOWER);
+			endElection();
+			state.setLeaderId(request.getLeaderId());
+		}
+
+		//if not Entry is null return success..It is just a heartbeat message...basically ignore.
 		if(request.getEntry() == null) {
 			responseObserver.onNext(AppendEntriesResponse.newBuilder().setTerm(currentTerm).setSuccess(true).build());
 			responseObserver.onCompleted();
 			return;
 		}
-
-		/**
-		 * TODO: Add checks to
-		 * 1. Service this request only if you are a follower.
-		 * 2. If you are a candidate..and got an RPC from the leader..you have to do the transition to follower..add that logic here..
-		 * 3. If you are a follower, who voted for a candidate, when you recived appendEntries RPC from that candidate - you restart the electionTime out thread
-		 * You need not do the 3rd check explicitly because, this is already handled in the regular flow, as you are already a follower...you anyways
-		 * notify the election timeout thread when ever you recieve an RPC>
-		 * */
-		/**
-		 * Note: When you are in the middle of election/ waiting for a majority, you could receive an append entries
-		 * RPC from another peer whose term is either
-		 *   > your current term -
-		 *   		abandon the election - i.e notify this code that election is not longer required
-		 *   		set your CurrentTerm to the new Term. and update your votedFor to that term..and that node
-		 *   	    When this happens to a node in follower mode....just update the term and votedFor
-		 *   = your current term
-		 *   		This means that another..node has become the leader for this term, you need not update your vote..
-		 *   		but, just notify the election code that is electionCompleted..
-		 * **/
 
 		AppendEntriesWrapper aew = new AppendEntriesWrapper(request);
 		aep.queueRequest(aew);
@@ -159,6 +184,19 @@ public class RaftService extends RaftServerImplBase {
 			StreamObserver<ClientRequestIndexResponse> responseObserver) {
 		// TODO Auto-generated method stub
 		super.clientRequestIndex(request, responseObserver);
+	}
+
+	private void notifyEventWaitThread() {
+		synchronized (eventWaitThread.heartBeatRecieved) {
+			eventWaitThread.heartBeatRecieved.set(true);
+			eventWaitThread.heartBeatRecieved.notify();
+		}
+	}
+
+	private void endElection() {
+		Candidate candidate = server.getCandidate();
+		candidate.setAbandonElection(true);
+		candidate.setElectionCompleted(true);
 	}
 	
 }
