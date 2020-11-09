@@ -31,6 +31,7 @@ public class Server {
 	private AppendEntriesProcessor appendEntriesProcessor;
 	EventWaitThread eventWaitThread;
 	private Candidate candidate;
+	private Leader leader;
 	//private AtomicBoolean heartBeatReceived = new AtomicBoolean(False);
 
 	public static void main(String[] args) throws Exception {

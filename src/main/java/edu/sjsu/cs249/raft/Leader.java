@@ -3,7 +3,6 @@ package edu.sjsu.cs249.raft;
 import edu.sjsu.cs249.raft.service.gen.RaftServerGrpc;
 
 import java.util.Map;
-import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CountDownLatch;
 
@@ -12,10 +11,16 @@ public class Leader{
  * Initially wait to become the Leader, then send heart beats..until you are no longer the leader.
  * */
 	//outStanding appends map
-    ConcurrentMap<Long, CountDownLatch> outStandingAppends;
+    ConcurrentMap<Integer, CountDownLatch> outStandingAppends;
     //TODO: Call backs have to be cleaned up; i.e waiting threads must be notified...so that the threads can exit..
     ConcurrentMap<Integer, Object> nextIndexCallBackRegister;
     State state;
+    int majority;
+
+    public Leader(State state, int majority) {
+        this.state = state;
+        this.majority = majority;
+    }
 
     public void lead() throws InterruptedException {
         //0. Create all the follower Stubs.- No need to create new set of stubs, stubs are thread safe
@@ -37,4 +42,19 @@ public class Leader{
 
     }
 
+    void cleanUp() {
+        if(!state.isLeader()) {
+            for(Object object: nextIndexCallBackRegister.values()) {
+                synchronized (object) {
+                    object.notifyAll();
+                }
+            }
+            //allow the client append calls to return..
+            for(CountDownLatch latch: outStandingAppends.values()) {
+                for(int i = 0; i< majority; i++) {
+                    latch.countDown();
+                }
+            }
+        }
+    }
 }

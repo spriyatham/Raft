@@ -13,6 +13,7 @@ import io.grpc.stub.StreamObserver;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 
 /**
  * RaftService will work along with the <b>Server</b> to service client requests and requests 
@@ -25,6 +26,7 @@ public class RaftService extends RaftServerImplBase {
 	State state;
 	EventWaitThread eventWaitThread;
 	Server server;
+	Leader leader;
 
 	@Override
 	public void requestVote(RequestVoteRequest request, StreamObserver<RequestVoteResponse> responseObserver) {
@@ -62,6 +64,7 @@ public class RaftService extends RaftServerImplBase {
 							break;
 						case State.LEADER:
 							state.setMode(State.FOLLOWER);
+							leader.cleanUp();
 							break;
 					}
 				}
@@ -130,6 +133,7 @@ public class RaftService extends RaftServerImplBase {
 						break;
 					case State.LEADER:
 						state.setMode(State.FOLLOWER);
+						leader.cleanUp();
 						break;
 				}
 				//you can set heartbeat recieved to true..because, infact you
@@ -175,8 +179,33 @@ public class RaftService extends RaftServerImplBase {
 
 	@Override
 	public void clientAppend(ClientAppendRequest request, StreamObserver<ClientAppendResponse> responseObserver) {
-		// TODO Auto-generated method stub
-		super.clientAppend(request, responseObserver);
+		if(!state.isLeader()) {
+			ClientAppendResponse response = ClientAppendResponse.newBuilder().setLeader(state.getLeaderId()).setIndex(-1).setRc(1).build();
+			responseObserver.onNext(response);
+			responseObserver.onCompleted();
+			return;
+		}
+		CountDownLatch majorityLatch = new CountDownLatch(leader.majority);
+		int newIndex = -1;
+		long term = state.getCurrentTerm();
+		synchronized (state.log) {
+			newIndex = state.log.size();
+			String command = request.getDecree();
+			LogEntry logEntry = new LogEntry(newIndex, term, command);
+			state.log.add(logEntry);
+			leader.outStandingAppends.put(newIndex, majorityLatch);
+		}
+		try {
+			majorityLatch.await();
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+		int isSuccess = 0;
+		if(!state.isLeader())
+			isSuccess = 1;
+		ClientAppendResponse response = ClientAppendResponse.newBuilder().setLeader(state.getLeaderId()).setIndex(newIndex).setRc(isSuccess).build();
+		responseObserver.onNext(response);
+		responseObserver.onCompleted();
 	}
 
 	@Override
