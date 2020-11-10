@@ -22,6 +22,12 @@ public class Candidate{
 	AtomicBoolean abandonElection = new AtomicBoolean(false);
 	AtomicBoolean electionCompleted = new AtomicBoolean(false);
 	RandomTimeoutGenerator timeoutGenerator;
+
+	public Candidate(State state, RandomTimeoutGenerator timeoutGenerator) {
+		this.state = state;
+		this.timeoutGenerator = timeoutGenerator;
+	}
+
 	/**
 	 * Note: When you are in the middle of election/ waiting for a majority, you could receive an append entries
 	 * RPC from another peer whose term is either

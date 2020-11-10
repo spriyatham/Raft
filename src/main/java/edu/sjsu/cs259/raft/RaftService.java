@@ -28,6 +28,14 @@ public class RaftService extends RaftServerImplBase {
 	Server server;
 	Leader leader;
 
+	public RaftService(AppendEntriesProcessor aep, State state, EventWaitThread eventWaitThread, Server server, Leader leader) {
+		this.aep = aep;
+		this.state = state;
+		this.eventWaitThread = eventWaitThread;
+		this.server = server;
+		this.leader = leader;
+	}
+
 	@Override
 	public void requestVote(RequestVoteRequest request, StreamObserver<RequestVoteResponse> responseObserver) {
 		RequestVoteResponse.Builder responseBuilder = RequestVoteResponse.newBuilder();

@@ -8,11 +8,12 @@ import java.util.Map;
 import java.util.Properties;
 
 import edu.sjsu.cs259.raft.service.gen.RaftServerGrpc;
+import edu.sjsu.cs259.raft.util.RandomTimeoutGenerator;
 import io.grpc.Channel;
 import io.grpc.ManagedChannelBuilder;
+import io.grpc.ServerBuilder;
 
 public class Server {
-	//TODO:
 	/**
 	 * 1. Initialize the State object.
 	 * 2. Load all persistent variables.
@@ -28,6 +29,7 @@ public class Server {
 	EventWaitThread eventWaitThread;
 	private Candidate candidate;
 	private Leader leader;
+	String[] myConnInfo;
 	//private AtomicBoolean heartBeatReceived = new AtomicBoolean(False);
 
 	public static void main(String[] args) throws Exception {
@@ -37,11 +39,9 @@ public class Server {
 		//3.
 		Server raftServer = new Server();
 		String propsFile = args[0];
-		Properties config = raftServer.loadConfig(propsFile);
-		raftServer.state = new State(config);
 
-		//buildChannel and Stubs
-		raftServer.getConnectionInformation(config);
+		raftServer.initServer(propsFile);
+
 	}
 
 	public void initServer(String propsFile) throws Exception {
@@ -53,20 +53,32 @@ public class Server {
 		//2.Build Channel and stubs.
 		Map<Integer,String[]> connectionInfo = getConnectionInformation(config);
 		buildChannelsAndStubs(connectionInfo, getState());
+
+		//Create objects of Follower, Candidate and Leader - All these will be threads most probably..and they will be started only when server
+		int majority = (connectionInfo.size() + 1) / 2;
+		this.leader = new Leader(state, majority);
+		this.candidate = new Candidate(state, new RandomTimeoutGenerator(state.getUpperBound(), state.getLowerBound()));
 		//3.Make the Make the instance a follower.
 		appendEntriesProcessor = new AppendEntriesProcessor(state);
 		eventWaitThread = new EventWaitThread(state);
 		state.setMode(State.FOLLOWER);
-		//4. Create objects of Follower, Candidate and Leader - All these will be threads most probably..and they will be started only when server is
-		// in that respective mode.
+
 		//5. Start GRPC server
+		RaftService raftService = new RaftService(appendEntriesProcessor,state, eventWaitThread,this, leader);
+		io.grpc.Server server = ServerBuilder.forPort(Integer.parseInt(myConnInfo[1])).
+				addService(raftService)
+				.build();
+
 		//5. Start the main loop
+		mainLoop();
+		server.start();
+		
 	}
 
 	/**
 	 * This loop coordinates the transition of the server from one mode to another mode
 	 * */
-	private void mainLoop() throws InterruptedException {
+	private void mainLoop() throws InterruptedException, IOException {
 		while (!state.isShutdown()) {
 			switch (state.getMode()) {
 				case State.FOLLOWER: //do stuff
@@ -80,9 +92,11 @@ public class Server {
 					ewt.join();
 					aepThread.join();
 					break;
-				case State.CANDIDATE: //do stuff
+				case State.CANDIDATE:
+					candidate.conductElection();
 					break;
-				case State.LEADER: //do stuff
+				case State.LEADER:
+					leader.lead();
 					break;
 			}
 		}
@@ -124,9 +138,11 @@ public class Server {
 		//candidate IDs will start from 1 to numOfServer
 		for(int i = 1; i <= numOfServers; i++)
 		{
-			if(i == cadidateID) continue;
 			String[] connInfo = config.getProperty(i+"").split(":");
-			connectionInfo.put(i, connInfo);
+			if(i == cadidateID)
+				myConnInfo = connInfo;
+			else
+				connectionInfo.put(i, connInfo);
 		}
 		return connectionInfo;
 	}
